@@ -120,13 +120,9 @@
                 <div class="form-group" id="smallModeOptions">
                     <div class="row">
                         <label class="col-sm-2 col-form-label">像素尺寸：</label>
-                        <select id="pixelSizeSelect" class="form-control col-sm-4">
-                            <option value="30">30x30</option>
-                            <option value="40">40x40</option>
-                            <option value="50" selected>50x50</option>
-                            <option value="64">64x64</option>
-                            <option value="80">80x80</option>
-                        </select>
+                        <div class="col-sm-4">
+                            <span class="form-text text-muted">像素分辨率由图片宽高和网格参数动态决定</span>
+                        </div>
                     </div>
                 </div>
                 <!-- 大图模式选项 -->
@@ -155,24 +151,62 @@
                         </div>
                     </div>
                 </div>
-                <!-- 共用选项：添加颜色数控制 -->
-                <div class="form-group">
+                <div class="form-group" id="gridAlignOptions">
                     <div class="row">
-                        <label class="col-sm-2 col-form-label">颜色控制：</label>
+                        <label class="col-sm-2 col-form-label">网格对齐模式：</label>
                         <div class="col-sm-4">
-                            <div class="input-group">
-                                <div class="input-group-prepend">
-                                    <span class="input-group-text">色调分离阈值</span>
-                                </div>
-                                <input type="range" class="form-control" id="colorThresholdRange" min="0" max="200" value="100">
-                                <div class="input-group-append">
-                                    <span class="input-group-text" id="colorThresholdValue">100</span>
-                                </div>
-                            </div>
-                            <small class="form-text text-muted">较低值会产生更多颜色，较高值会合并相似颜色</small>
+                            <input type="checkbox" id="gridAlignModeSwitch"> 启用网格对齐
+                        </div>
+                    </div>
+                    <div class="row mt-2" id="gridParamsPanel" style="display:none;">
+                        <label class="col-sm-2 col-form-label">网格大小：</label>
+                        <input type="number" class="form-control col-sm-2" id="gridSizeInput" min="2" max="100" value="8">
+                        <label class="col-sm-2 col-form-label">X偏移：</label>
+                        <input type="number" class="form-control col-sm-2" id="gridOffsetXInput" value="0">
+                        <label class="col-sm-2 col-form-label">Y偏移：</label>
+                        <input type="number" class="form-control col-sm-2" id="gridOffsetYInput" value="0">
+                    </div>
+                    <div class="row mt-2">
+                        <div class="col-sm-12">
+                            <div id="gridAlignPreviewTip" class="alert alert-info" style="display:none;">网格参数变化时，所有画布将实时叠加红色半透明网格线，便于对齐预览。</div>
                         </div>
                     </div>
                 </div>
+                <div class="form-group">
+                    <div class="row">
+                        <label class="col-sm-2 col-form-label">颜色数控制：</label>
+                        <div class="col-sm-4">
+                            <div class="input-group">
+                                <div class="input-group-prepend">
+                                    <span class="input-group-text">最大颜色数</span>
+                                </div>
+                                <input type="number" class="form-control" id="colorCountInput" min="2" max="256" value="32">
+                            </div>
+                            <small class="form-text text-muted">控制最终输出的最大颜色数</small>
+                        </div>
+                    </div>
+                </div>
+                <!-- 色彩限制表区域，增加提示div -->
+                <div class="form-group">
+                    <div class="row">
+                        <label class="col-sm-2 col-form-label">色彩限制表：</label>
+                        <div class="col-sm-4">
+                            <input type="file" class="form-control" id="colorLimitCsvInput" accept=".csv">
+                            <button type="button" class="btn btn-primary mt-1" id="importColorLimitCsv">导入色彩限制表（CSV）</button>
+                            <small class="form-text text-muted">仅允许使用导入的色号进行配色和渲染</small>
+                            <div id="colorLimitTip" class="mt-2"></div>
+                        </div>
+                    </div>
+                </div>
+                <!-- 在主内容区添加导出按钮 -->
+                <!-- <div class="form-group text-right">
+                    <button type="button" class="btn btn-success" id="exportImageAndColors">导出图像及颜色清单</button>
+                </div> -->
+                <!-- 导出图纸按钮和隐藏canvas -->
+                <div class="form-group text-right">
+                    <button type="button" class="btn btn-info" id="exportPatternImage">导出图纸（含网格与色号）</button>
+                </div>
+                <canvas id="exportCanvas" style="display:none"></canvas>
             </form>
         </div>
     </div>
@@ -399,6 +433,19 @@
             </div>
         </div>
     </div>
+    <!-- 原图canvas下方新增网格预览canvas，增加缩放滑块 -->
+    <div class="card mt-2">
+        <div class="card-header">原图+理论网格预览
+            <div class="float-right">
+                <label for="gridPreviewScaleRange" style="font-weight:normal;">缩放：</label>
+                <input type="range" id="gridPreviewScaleRange" min="1" max="5" step="0.1" value="1" style="width:120px;vertical-align:middle;">
+                <span id="gridPreviewScaleValue">1.0x</span>
+            </div>
+        </div>
+        <div class="card-body">
+            <canvas id="gridPreviewCanvas" style="border:1px solid #888;max-width:100%;background:#fff;"></canvas>
+        </div>
+    </div>
 </body>
 
 <script type="text/javascript">
@@ -442,6 +489,74 @@
     var scrollbarWidth = getScrollbarWidth();
 
     var rulerX1Canvas, rulerX2Canvas, rulerY1Canvas, rulerY2Canvas;//四个标尺的canvas
+
+    // ====== 全局变量声明 ======
+    window.gridSize = 8;
+    window.gridOffsetX = 0;
+    window.gridOffsetY = 0;
+    window.isGridAlignMode = false;
+    window.colorLimitList = null; // 限制色号数组
+    window.pixelCountX = 0;
+    window.pixelCountY = 0;
+
+    // ====== 色彩限制表CSV导入 ======
+    $('#importColorLimitCsv').click(function() {
+        var file = $('#colorLimitCsvInput')[0].files[0];
+        if (!file) { alert('请先选择CSV文件'); return; }
+        var reader = new FileReader();
+        reader.onload = function(e) {
+            var text = e.target.result;
+            var arr = text.split(/[\r\n,;\s]+/).map(x=>x.trim()).filter(x=>x);
+            if (arr.length === 0) { alert('CSV内容为空'); return; }
+            window.colorLimitList = arr;
+            updatePaletteByColorLimit();
+            alert('色彩限制表导入成功！');
+        };
+        reader.readAsText(file);
+    });
+    function updatePaletteByColorLimit() {
+        if (!window.colorLimitList) return;
+        var brand = $('#paletteSelect').val();
+        var all = allPalettes.get(brand);
+        var filtered = all.filter(c => window.colorLimitList.includes(c.name));
+        paletteMap = generatePaletteMap(filtered);
+        generateColorSelectorHtml();
+        if (originalImage) processImage(originalImage);
+    }
+    // ====== 网格对齐模式UI与参数联动 ======
+    function updateGridAlignUI() {
+        if (isSmallMode) {
+            $('#gridAlignOptions').show();
+        } else {
+            $('#gridAlignOptions').hide();
+        }
+        if (window.isGridAlignMode) {
+            $('#gridParamsPanel').show();
+            $('#gridAlignPreviewTip').show();
+        } else {
+            $('#gridParamsPanel').hide();
+            $('#gridAlignPreviewTip').hide();
+        }
+    }
+    $('#smallModeRadio').change(function(){ updateGridAlignUI(); });
+    $('#largeModeRadio').change(function(){ updateGridAlignUI(); });
+    $('#gridAlignModeSwitch').change(function(){
+        window.isGridAlignMode = this.checked;
+        updateGridAlignUI();
+        if (originalImage) processImage(originalImage);
+    });
+    $('#gridSizeInput').on('input', function(){ window.gridSize = parseInt(this.value)||8; if (originalImage) processImage(originalImage); });
+    $('#gridOffsetXInput').on('input', function(){ window.gridOffsetX = parseInt(this.value)||0; if (originalImage) processImage(originalImage); });
+    $('#gridOffsetYInput').on('input', function(){ window.gridOffsetY = parseInt(this.value)||0; if (originalImage) processImage(originalImage); });
+    // ====== 像素分辨率与网格联动 ======
+    function updatePixelCountByGrid() {
+        if (!isSmallMode || !window.isGridAlignMode || !originalImage) return;
+        window.pixelCountX = Math.floor(originalImage.width / window.gridSize);
+        window.pixelCountY = Math.floor(originalImage.height / window.gridSize);
+    }
+    // ====== 主流程processImage/refreshImage等联动 ======
+    // 需在processImage、refreshImage等主流程内调用updatePixelCountByGrid，并用window.pixelCountX/Y代替pixelCount
+    // ...（主流程修改见下步）...
 
     $().ready(function () {
         var originalCanvas = document.getElementById('originalCanvas'),//原始图片canvas
@@ -909,32 +1024,21 @@
         let sourceCtx = sourceCanvas.getContext('2d'),
             destCtx = destCanvas.getContext('2d'),
             imageData = sourceCtx.getImageData(0, 0, sourceCanvas.width, sourceCanvas.height);
-
-        //逐像素读取原图并寻找颜色值
+        let maxColorCount = getMaxColorCount();
+        // TODO: 若有聚类/色彩分离算法，按maxColorCount聚类
         for (let i = 0; i < imageData.data.length; i += 4) {
-            //读取颜色，如果透明则跳过
             let a = imageData.data[i + 3];
             if (a == 0) continue;
-
-            //加透明度选项
             let r = ~~(imageData.data[i] * a / 255);
             let g = ~~(imageData.data[i + 1] * a / 255);
             let b = ~~(imageData.data[i + 2] * a / 255);
-
-            let x = (i / 4) % sourceCanvas.width;
-            let y = ~~((i / 4) / sourceCanvas.width);
-
-            //绘制调色板图
             let similarColor = findSimilarColor(r, g, b);
             imageData.data[i] = similarColor.r;
             imageData.data[i + 1] = similarColor.g;
             imageData.data[i + 2] = similarColor.b;
-            imageData.data[i + 3] = 255;//处理后一律变成不透明色
+            imageData.data[i + 3] = 255;
         }
-
-        //保存换色后的原图
         paletteImageData = imageData;
-
         similarColorCache = null;
         destCanvas.width = sourceCanvas.width;
         destCanvas.height = sourceCanvas.height;
@@ -1406,17 +1510,15 @@
     //寻找一个颜色最相近的调色板色值
     function findSimilarColor(r, g, b) {
         let hex = rgbToHex(r, g, b);
-        //首先查找缓存
-        if (similarColorCache.has(hex)) {
-            return similarColorCache.get(hex);
+        if (window.similarColorCache && window.similarColorCache.has(hex)) {
+            return window.similarColorCache.get(hex);
         }
-
-        let minDistance = 584970;//最小色差值（初始值为纯黑和纯白的色差，使用colorDistance(0,0,0,255,255,255)计算而得）
-        let minColor = null;//最小值对应的颜色
-        for (let color of paletteMap.values()) {
+        let minDistance = 584970;
+        let minColor = null;
+        for (let color of window.paletteMap.values()) {
             let distance = colorDistance(color.r, color.g, color.b, r, g, b);
-            if (distance == 0) {//颜色相等直接返回
-                similarColorCache.set(hex, color);//写入缓存
+            if (distance == 0) {
+                window.similarColorCache.set(hex, color);
                 return color;
             }
             if (distance < minDistance) {
@@ -1424,20 +1526,7 @@
                 minColor = color;
             }
         }
-        
-        // 应用颜色阈值处理 - 如果已经有一个接近的颜色缓存，并且新颜色在阈值范围内，则使用缓存的颜色
-        // 遍历缓存，查找是否有满足阈值要求的相似颜色
-        for (let [cachedHex, cachedColor] of similarColorCache.entries()) {
-            let cachedRgb = hexToRgb(cachedHex);
-            let cachedDistance = colorDistance(cachedRgb.r, cachedRgb.g, cachedRgb.b, r, g, b);
-            if (cachedDistance < colorThreshold) {
-                // 在阈值范围内，使用已缓存的颜色映射
-                similarColorCache.set(hex, cachedColor);
-                return cachedColor;
-            }
-        }
-
-        similarColorCache.set(hex, minColor);//写入缓存
+        window.similarColorCache.set(hex, minColor);
         return minColor;
     }
 
@@ -1595,19 +1684,13 @@
 
     // 单独的图像处理函数，便于重新调用
     function processImage(image) {
-        // 不再直接限制图片尺寸，而是对大图进行压缩处理
         let originalWidth = image.width;
         let originalHeight = image.height;
         let needResize = false;
-        let needPixelize = $('#pixelizeCheckbox').prop('checked') && !isSmallMode; // 只在大图模式下生效
-        
-        // 判断是否需要压缩图片
+        let needPixelize = $('#pixelizeCheckbox').prop('checked') && !isSmallMode;
         if (originalWidth > imageSizeLimit || originalHeight > imageSizeLimit) {
             needResize = true;
         }
-        
-        //重加载图片后的完整操作步骤：
-        //清空缓存和各种信息
         similarColorCache = new Map();
         paletteImageData = new Array();
         sliceImages = new Array();
@@ -1617,80 +1700,68 @@
         colorReplaceList = new Map();
         pixelColorReplaceList = new Map();
         refreshColorReplaceList();
-
         $('#mainContent').show();
-
         let originalCtx = originalCanvas.getContext('2d');
         originalCtx.clearRect(0, 0, originalCanvas.width, originalCanvas.height);
-        
-        // 创建临时canvas用于处理图像
         let tempCanvas = document.createElement('canvas');
         let tempCtx = tempCanvas.getContext('2d');
-        
-        // 如果需要压缩图片
         if (needResize) {
-            // 计算压缩后的尺寸
             let ratio = Math.min(imageSizeLimit / originalWidth, imageSizeLimit / originalHeight);
             let newWidth = Math.floor(originalWidth * ratio);
             let newHeight = Math.floor(originalHeight * ratio);
-            
-            // 设置临时canvas尺寸
             tempCanvas.width = newWidth;
             tempCanvas.height = newHeight;
-            
-            // 绘制压缩后的图片
             tempCtx.drawImage(image, 0, 0, newWidth, newHeight);
-            console.log(`图片已从${originalWidth}x${originalHeight}压缩至${newWidth}x${newHeight}`);
         } else {
-            // 设置临时canvas尺寸
             tempCanvas.width = image.width;
             tempCanvas.height = image.height;
-            
-            // 绘制原图
             tempCtx.drawImage(image, 0, 0);
         }
-        
-        // 如果是小图模式或需要像素化处理
-        if (isSmallMode || needPixelize) {
-            // 创建第二个临时canvas
-            let pixelizeCanvas = document.createElement('canvas');
-            let pixelizeCtx = pixelizeCanvas.getContext('2d');
-            
-            // 根据模式设置尺寸
-            let targetSize = isSmallMode ? pixelCount : 50;
-            
-            // 设置为目标尺寸
-            pixelizeCanvas.width = targetSize;
-            pixelizeCanvas.height = targetSize;
-            
-            // 绘制缩小后的图片（这会自动实现像素化）
-            pixelizeCtx.drawImage(tempCanvas, 0, 0, targetSize, targetSize);
-            
-            // 设置最终原始canvas的尺寸和内容
-            originalCanvas.width = targetSize;
-            originalCanvas.height = targetSize;
-            originalCtx.drawImage(pixelizeCanvas, 0, 0);
-            
-            console.log(`图片已处理为${targetSize}x${targetSize}像素风格`);
+        // ===== 网格对齐模式下的像素化处理 =====
+        if (isSmallMode) {
+            window.pixelCountX = Math.floor(tempCanvas.width / window.gridSize);
+            window.pixelCountY = Math.floor(tempCanvas.height / window.gridSize);
+            let px = window.pixelCountX, py = window.pixelCountY;
+            let gridSize = window.gridSize;
+            let offsetX = window.gridOffsetX, offsetY = window.gridOffsetY;
+            let pixelCanvas = document.createElement('canvas');
+            pixelCanvas.width = px;
+            pixelCanvas.height = py;
+            let pixelCtx = pixelCanvas.getContext('2d');
+            for (let y = 0; y < py; y++) {
+                for (let x = 0; x < px; x++) {
+                    let sx = x * gridSize + offsetX;
+                    let sy = y * gridSize + offsetY;
+                    let imgData = tempCtx.getImageData(sx, sy, gridSize, gridSize);
+                    let r = 0, g = 0, b = 0, count = 0;
+                    for (let i = 0; i < imgData.data.length; i += 4) {
+                        r += imgData.data[i];
+                        g += imgData.data[i + 1];
+                        b += imgData.data[i + 2];
+                        count++;
+                    }
+                    if (count > 0) {
+                        r = Math.round(r / count);
+                        g = Math.round(g / count);
+                        b = Math.round(b / count);
+                    }
+                    pixelCtx.fillStyle = `rgb(${r},${g},${b})`;
+                    pixelCtx.fillRect(x, y, 1, 1);
+                }
+            }
+            originalCanvas.width = px;
+            originalCanvas.height = py;
+            originalCtx.drawImage(pixelCanvas, 0, 0);
         } else {
-            // 使用临时canvas的内容设置最终原始canvas
             originalCanvas.width = tempCanvas.width;
             originalCanvas.height = tempCanvas.height;
             originalCtx.drawImage(tempCanvas, 0, 0);
         }
-        
-        //切掉原图白色和透明边
         trimCanvas(originalCanvas);
-        //将原图颜色换成最相近的调色板颜色
         toPaletteColor(originalCanvas, fullCanvas);
-        
-        // 根据模式决定是否切图
         if (!isSmallMode) {
-            //将完整图片切成图块
             sliceCanvasToImage(fullCanvas, 'sliceImageContainer');
         }
-        
-        //显示完整图片对应的马赛克大图
         showFullImageView();
     }
 
@@ -1709,6 +1780,210 @@
                 processImage(originalImage);
             });
         }
+    });
+
+    // 在processImage或toPaletteColor前读取最大颜色数
+    function getMaxColorCount() {
+        var n = parseInt($('#colorCountInput').val());
+        if (isNaN(n) || n < 2) n = 32;
+        return n;
+    }
+
+    // ======= 导出功能 =======
+    $('#exportImageAndColors').click(function() {
+        // 1. 导出主画布（fullCanvas）为PNG
+        var canvas = document.getElementById('fullCanvas');
+        var imgURL = canvas.toDataURL('image/png');
+        var link = document.createElement('a');
+        link.href = imgURL;
+        link.download = 'pixel_image.png';
+        link.click();
+        // 2. 统计所用颜色
+        var usedColors = new Set();
+        var ctx = canvas.getContext('2d');
+        var imgData = ctx.getImageData(0, 0, canvas.width, canvas.height);
+        for (let i = 0; i < imgData.data.length; i += 4) {
+            let a = imgData.data[i + 3];
+            if (a === 0) continue;
+            let r = imgData.data[i];
+            let g = imgData.data[i + 1];
+            let b = imgData.data[i + 2];
+            let hex = rgbToHex(r, g, b);
+            usedColors.add(hex);
+        }
+        // 3. 生成颜色清单文本
+        var colorList = Array.from(usedColors).map(hex => {
+            var name = window.paletteMap && window.paletteMap.get(hex) ? window.paletteMap.get(hex).name : '';
+            return '#' + hex + (name ? (' (' + name + ')') : '');
+        }).join('\n');
+        // 4. 下载颜色清单txt
+        var blob = new Blob([colorList], {type: 'text/plain'});
+        var colorLink = document.createElement('a');
+        colorLink.href = URL.createObjectURL(blob);
+        colorLink.download = 'used_colors.txt';
+        colorLink.click();
+    });
+
+    // ======= 导出图纸（含网格与色号）功能 =======
+    $('#exportPatternImage').click(function() {
+        renderExportCanvasAndDownload();
+    });
+    function renderExportCanvasAndDownload() {
+        // 1. 获取像素数据和色号
+        var imgData = window.paletteImageData;
+        var px = window.pixelCountX || (imgData ? imgData.width : 0);
+        var py = window.pixelCountY || (imgData ? imgData.height : 0);
+        if (!imgData || !px || !py) { alert('请先生成像素图'); return; }
+        var cellSize = 32; // 每格像素大小（可调）
+        var margin = 40; // 四周留白
+        var statBlockH = 60; // 统计区高度
+        var statBlockW = Math.max(400, px * cellSize);
+        var exportCanvas = document.getElementById('exportCanvas');
+        exportCanvas.width = px * cellSize + margin * 2;
+        exportCanvas.height = py * cellSize + margin * 2 + statBlockH + 60;
+        var ctx = exportCanvas.getContext('2d');
+        ctx.fillStyle = '#fff';
+        ctx.fillRect(0, 0, exportCanvas.width, exportCanvas.height);
+        // 2. 绘制像素格子、色块、色号
+        var colorCountMap = new Map();
+        for (let y = 0; y < py; y++) {
+            for (let x = 0; x < px; x++) {
+                let idx = (y * px + x) * 4;
+                let r = imgData.data[idx];
+                let g = imgData.data[idx + 1];
+                let b = imgData.data[idx + 2];
+                let hex = rgbToHex(r, g, b);
+                // 统计数量
+                colorCountMap.set(hex, (colorCountMap.get(hex) || 0) + 1);
+                // 绘制色块
+                ctx.fillStyle = '#' + hex;
+                ctx.fillRect(margin + x * cellSize, margin + y * cellSize, cellSize, cellSize);
+                // 绘制色号
+                let colorObj = window.paletteMap && window.paletteMap.get(hex);
+                let label = colorObj ? colorObj.name : hex;
+                ctx.font = 'bold 14px monospace';
+                ctx.textAlign = 'center';
+                ctx.textBaseline = 'middle';
+                ctx.fillStyle = getFontColor(r, g, b);
+                ctx.fillText(label, margin + x * cellSize + cellSize / 2, margin + y * cellSize + cellSize / 2);
+                // 绘制网格线
+                ctx.strokeStyle = '#888';
+                ctx.lineWidth = 1;
+                ctx.strokeRect(margin + x * cellSize, margin + y * cellSize, cellSize, cellSize);
+            }
+        }
+        // 3. 绘制坐标标尺
+        ctx.font = '12px monospace';
+        ctx.fillStyle = '#333';
+        for (let x = 0; x < px; x++) {
+            ctx.fillText((x + 1).toString(), margin + x * cellSize + cellSize / 2, margin - 15);
+        }
+        for (let y = 0; y < py; y++) {
+            ctx.fillText((y + 1).toString(), margin - 20, margin + y * cellSize + cellSize / 2);
+        }
+        // 4. 绘制色号统计区
+        let statY = margin + py * cellSize + 30;
+        ctx.font = 'bold 22px monospace';
+        ctx.textAlign = 'left';
+        ctx.fillText('颜色统计', margin, statY);
+        let statX = margin;
+        let statRowH = 32;
+        let i = 0;
+        colorCountMap = Array.from(colorCountMap.entries()).sort((a, b) => b[1] - a[1]);
+        for (let [hex, count] of colorCountMap) {
+            let colorObj = window.paletteMap && window.paletteMap.get(hex);
+            let label = colorObj ? colorObj.name : hex;
+            // 色块
+            ctx.fillStyle = '#' + hex;
+            ctx.fillRect(statX, statY + 10 + i * statRowH, 32, 32);
+            // 色号
+            ctx.font = 'bold 18px monospace';
+            ctx.fillStyle = '#000';
+            ctx.fillText(label, statX + 40, statY + 10 + i * statRowH + 20);
+            // 数量
+            ctx.font = '16px monospace';
+            ctx.fillStyle = '#333';
+            ctx.fillText(count.toString(), statX + 120, statY + 10 + i * statRowH + 20);
+            i++;
+            if (i % 8 === 0) { statX += 180; i = 0; }
+        }
+        // 5. 导出PNG
+        var imgURL = exportCanvas.toDataURL('image/png');
+        var link = document.createElement('a');
+        link.href = imgURL;
+        link.download = 'pattern_grid.png';
+        link.click();
+    }
+
+    // ======= 网格预览canvas实时刷新，支持缩放 =======
+    window.gridPreviewScale = 1;
+    $('#gridPreviewScaleRange').on('input', function(){
+        window.gridPreviewScale = parseFloat(this.value);
+        $('#gridPreviewScaleValue').text(window.gridPreviewScale.toFixed(1) + 'x');
+        refreshGridPreviewCanvas();
+    });
+    // 默认值
+    window.gridPreviewScale = parseFloat($('#gridPreviewScaleRange').val());
+    $('#gridPreviewScaleValue').text(window.gridPreviewScale.toFixed(1) + 'x');
+    function refreshGridPreviewCanvas() {
+        var canvas = document.getElementById('gridPreviewCanvas');
+        var img = window.originalImage;
+        if (!img) { canvas.width = 400; canvas.height = 200; var ctx = canvas.getContext('2d'); ctx.clearRect(0,0,canvas.width,canvas.height); ctx.font = '16px monospace'; ctx.fillText('请先上传图片', 20, 50); return; }
+        // 预览区最大宽高
+        var maxW = 1200, maxH = 800;
+        var scale = Math.min(maxW / img.width, maxH / img.height, 1) * (window.gridPreviewScale || 1);
+        var showW = Math.round(img.width * scale), showH = Math.round(img.height * scale);
+        canvas.width = showW; canvas.height = showH;
+        var ctx = canvas.getContext('2d');
+        ctx.clearRect(0,0,showW,showH);
+        ctx.drawImage(img, 0, 0, showW, showH);
+        // 叠加理论网格
+        var gridSize = window.gridSize || 8;
+        var offsetX = window.gridOffsetX || 0;
+        var offsetY = window.gridOffsetY || 0;
+        ctx.save();
+        ctx.strokeStyle = 'rgba(0,0,0,0.8)';
+        ctx.lineWidth = 1;
+        // 横线
+        for (let y = offsetY; y <= img.height; y += gridSize) {
+            let sy = Math.round(y * scale);
+            ctx.beginPath();
+            ctx.moveTo(0, sy);
+            ctx.lineTo(showW, sy);
+            ctx.stroke();
+        }
+        // 竖线
+        for (let x = offsetX; x <= img.width; x += gridSize) {
+            let sx = Math.round(x * scale);
+            ctx.beginPath();
+            ctx.moveTo(sx, 0);
+            ctx.lineTo(sx, showH);
+            ctx.stroke();
+        }
+        ctx.restore();
+    }
+    // grid参数、原图、缩放变化时自动刷新
+    $('#gridSizeInput,#gridOffsetXInput,#gridOffsetYInput').on('input', refreshGridPreviewCanvas);
+    $('#imageChooser').on('change', function(){ setTimeout(refreshGridPreviewCanvas, 500); });
+    if (window.originalImage) setTimeout(refreshGridPreviewCanvas, 500);
+
+    // ====== 页面加载时自动读取sehao.csv为默认色彩限制表，并提示 ======
+    $(function(){
+        fetch('sehao.csv').then(resp => {
+            if (!resp.ok) throw new Error('not found');
+            return resp.text();
+        }).then(text => {
+            var arr = text.split(/[\r\n,;\s]+/).map(x=>x.trim()).filter(x=>x);
+            if (arr.length > 0) {
+                window.colorLimitList = arr;
+                updatePaletteByColorLimit();
+                $('#colorLimitTip').html('<span class="text-success">已自动应用默认色彩限制表（sehao.csv）</span>');
+                // 设置文件选择框label为sehao.csv
+                $('#colorLimitCsvInput').next('.custom-file-label').html('sehao.csv');
+            }
+        }).catch(() => {
+            $('#colorLimitTip').html('<span class="text-danger">未找到默认色彩限制表（sehao.csv）</span>');
+        });
     });
 </script>
 
